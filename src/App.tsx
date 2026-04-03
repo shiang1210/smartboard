@@ -1,7 +1,6 @@
 // @ts-nocheck
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import DOMPurify from 'dompurify';
-import liff from '@line/liff';
 
 const GAS_URL = 'https://script.google.com/macros/s/AKfycbyPMIeiPEvlGa4o5fs2ea3sWqtISn4bVp2G7S3HV1t-acgFozmRZvCIDe5qXKc8nUBkHQ/exec';
 const LIFF_ID = '2009406684-H9fk9ysT';
@@ -57,7 +56,7 @@ const getTags = (subcatStr) => {
 const handleOpenUrl = (e, url) => {
   e.stopPropagation();
   if (!url || url === '#') return;
-  if (liff.isInClient()) liff.openWindow({ url: url, external: false });
+  if (window.liff && window.liff.isInClient()) window.liff.openWindow({ url: url, external: false });
   else window.open(url, '_blank');
 };
 
