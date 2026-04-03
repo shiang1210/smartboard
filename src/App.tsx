@@ -1,6 +1,8 @@
 // @ts-nocheck
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import DOMPurify from 'dompurify';
+import './index.css';
+import './App.css';
 
 const GAS_URL = 'https://script.google.com/macros/s/AKfycbyPMIeiPEvlGa4o5fs2ea3sWqtISn4bVp2G7S3HV1t-acgFozmRZvCIDe5qXKc8nUBkHQ/exec';
 const LIFF_ID = '2009406684-H9fk9ysT';
