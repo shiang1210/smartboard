@@ -5,7 +5,7 @@ import DOMPurify from 'dompurify';
 const GAS_URL = 'https://script.google.com/macros/s/AKfycbyPMIeiPEvlGa4o5fs2ea3sWqtISn4bVp2G7S3HV1t-acgFozmRZvCIDe5qXKc8nUBkHQ/exec';
 const LIFF_ID = '2009406684-H9fk9ysT';
 
-// ─── IndexedDB 快取 ────────────────────────────────────────────
+// *** IndexedDB 快取 ***
 const initDB = () => new Promise((resolve, reject) => {
   const req = indexedDB.open('InfoWallDB', 1);
   req.onupgradeneeded = e => e.target.result.createObjectStore('cacheStore');
@@ -33,7 +33,7 @@ const getFromIDB = async (key) => {
   } catch(e) { return null; }
 };
 
-// ─── 工具函式 ──────────────────────────────────────────────────
+// *** 工具函式 ***
 const getThumbnail = (url) => {
   if (!url || !url.includes('drive.google.com')) return null;
   const match = url.match(/\/d\/(.+?)\//) || url.match(/id=(.+?)(&|$)/);
@@ -60,7 +60,7 @@ const handleOpenUrl = (e, url) => {
   else window.open(url, '_blank');
 };
 
-// ─── Undo Store ────────────────────────────────────────────────
+// *** Undo Store ***
 const useUndoStore = (() => {
   let listeners = [];
   let stack = [];
@@ -74,7 +74,7 @@ const useUndoStore = (() => {
   };
 })();
 
-// ─── LazyImage ────────────────────────────────────────────────
+// *** LazyImage ***
 const LazyImage = ({ src, alt, className }) => {
   const [isLoaded, setIsLoaded] = useState(false);
   const imgRef = useRef();
@@ -94,7 +94,7 @@ const LazyImage = ({ src, alt, className }) => {
   );
 };
 
-// ─── UndoToast ────────────────────────────────────────────────
+// *** UndoToast ***
 const UndoToast = ({ isDarkMode }) => {
   const [stack, setStack] = useState([]);
   const timersRef = useRef({});
@@ -132,7 +132,7 @@ const UndoToast = ({ isDarkMode }) => {
   );
 };
 
-// ─── SystemHeader ─────────────────────────────────────────────
+// *** SystemHeader ***
 const SystemHeader = ({ pwaPrompt, installPWA, isDarkMode, setIsDarkMode, isManageMode, setIsManageMode, selectedIds, handleBatchArchive, handleBatchDelete, isProcessing, setIsTagManagerOpen, profile, todoStats, filter }) => (
   <header className={`sticky top-0 z-40 border-b backdrop-blur-xl transition-colors duration-300 ${isDarkMode ? 'bg-slate-900/80 border-slate-700/50' : 'bg-white/80 border-slate-200/50'}`}>
     <div className="py-3 flex justify-between items-center flex-wrap gap-2 px-4 max-w-7xl mx-auto">
@@ -169,7 +169,7 @@ const SystemHeader = ({ pwaPrompt, installPWA, isDarkMode, setIsDarkMode, isMana
   </header>
 );
 
-// ─── FilterPanel ──────────────────────────────────────────────
+// *** FilterPanel ***
 const FilterPanel = ({ filter, setFilter, subcategories, subFilter, setSubFilter, keyword, setKeyword, startDate, setStartDate, endDate, setEndDate, showAdvanced, setShowAdvanced, handleSearch, setIsBrainstormOpen, isDarkMode }) => (
   <div className="pb-3 flex flex-col w-full">
     <div className="flex flex-col sm:flex-row gap-3 sm:items-start justify-between w-full">
@@ -178,6 +178,7 @@ const FilterPanel = ({ filter, setFilter, subcategories, subFilter, setSubFilter
           {['全部', '看板', '待辦', '行程', '好文', '檔案'].map(t => (
             <button key={t} onClick={() => { setFilter(t); setSubFilter('全部'); }} className={`px-4 py-1.5 rounded-xl text-[11px] font-black whitespace-nowrap transition-all ${filter === t ? 'bg-indigo-600 text-white shadow-md' : (isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-white text-slate-400 border border-slate-200/60')}`}>{t}</button>
           ))}
+          {/* 幫我想想 按鈕 */}
           <button onClick={() => setIsBrainstormOpen(true)} className={`px-4 py-1.5 rounded-xl text-[11px] font-black whitespace-nowrap transition-all bg-gradient-to-r from-amber-500 to-pink-500 text-white shadow-md hover:scale-105`}>💡 幫我想想</button>
         </div>
         {filter === '好文' && subcategories.length > 1 && (
@@ -214,7 +215,7 @@ const FilterPanel = ({ filter, setFilter, subcategories, subFilter, setSubFilter
   </div>
 );
 
-// ─── InfoCard ─────────────────────────────────────────────────
+// *** InfoCard ***
 const InfoCard = ({ item, isManageMode, selectedIds, toggleSelection, setEditingItem, setConfirmDelete, handleToggleTodo, handleToggleCompleted, isDarkMode }) => {
   const thumb = getThumbnail(item?.url);
   const isSelected = selectedIds.has(item?.id);
@@ -291,7 +292,7 @@ const InfoCard = ({ item, isManageMode, selectedIds, toggleSelection, setEditing
   );
 };
 
-// ─── KanbanView ───────────────────────────────────────────────
+// *** KanbanView ***
 const KanbanView = ({ items, renderCard, isDarkMode }) => (
   <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start w-full">
     <div className={`rounded-2xl p-4 min-h-[500px] border ${isDarkMode ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
@@ -315,7 +316,7 @@ const KanbanView = ({ items, renderCard, isDarkMode }) => (
   </div>
 );
 
-// ─── Brainstorm Modal ─────────────────────────────────────────
+// *** Brainstorm Modal ***
 const BrainstormModal = ({ isDarkMode, setIsBrainstormOpen, filteredContext, executeAction }) => {
   const [query, setQuery] = useState('');
   const [isSearching, setIsSearching] = useState(false);
@@ -417,7 +418,7 @@ const BrainstormModal = ({ isDarkMode, setIsBrainstormOpen, filteredContext, exe
   );
 };
 
-// ─── App 主元件 ───────────────────────────────────────────────
+// *** App 主元件 ***
 export default function App() {
   const [items, setItems] = useState([]);
   const [filter, setFilter] = useState('全部');
@@ -506,7 +507,7 @@ export default function App() {
     setSelectedIds(newSet);
   };
 
-  // ─── executeAction ──────────────────────────────
+  // *** executeAction ***
   const executeAction = async (action, idsOrItem, successMsg) => {
     setIsProcessing(true);
     try {
