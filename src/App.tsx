@@ -61,16 +61,13 @@ const handleOpenUrl = (e, url) => {
   else window.open(url, '_blank');
 };
 
-// ─── Undo Store（模組級單例，不依賴 React）────────────────────
+// ─── Undo Store ────────────────────────────────────────────────
 const useUndoStore = (() => {
   let listeners = [];
   let stack = [];
   const notify = () => listeners.forEach(fn => fn([...stack]));
   return {
-    subscribe: (fn) => {
-      listeners.push(fn);
-      return () => { listeners = listeners.filter(l => l !== fn); };
-    },
+    subscribe: (fn) => { listeners.push(fn); return () => { listeners = listeners.filter(l => l !== fn); }; },
     push: (entry) => { stack = [entry, ...stack].slice(0, 20); notify(); },
     pop: () => { const e = stack[0]; stack = stack.slice(1); notify(); return e; },
     clear: () => { stack = []; notify(); },
@@ -114,11 +111,9 @@ const UndoToast = ({ isDarkMode }) => {
     entry.undo();
   };
 
-  // 自動清除最舊 entry（若沒有 timer 的話也提供視覺消失）
   useEffect(() => {
     if (stack.length === 0) return;
     const entry = stack[0];
-    // 若 entry 有 autoRemove，6 秒後從 stack 移除（視覺用）
     if (entry.autoRemove) {
       const t = setTimeout(() => useUndoStore.pop(), 6000);
       timersRef.current[entry.id] = t;
@@ -132,18 +127,8 @@ const UndoToast = ({ isDarkMode }) => {
   return (
     <div className={`fixed bottom-24 left-1/2 -translate-x-1/2 z-[9998] flex items-center gap-3 px-5 py-3 rounded-2xl shadow-2xl border text-sm font-bold transition-all animate-fade-in ${isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-100' : 'bg-white border-slate-200 text-slate-800'}`}>
       <span>{entry.label}</span>
-      <button
-        onClick={() => handleUndo(entry)}
-        className="px-3 py-1 bg-indigo-600 text-white rounded-xl text-xs font-black hover:bg-indigo-500 transition-colors"
-      >
-        ↩ 撤銷
-      </button>
-      <button
-        onClick={() => useUndoStore.pop()}
-        className={`px-2 py-1 rounded-xl text-xs transition-colors ${isDarkMode ? 'text-slate-400 hover:text-slate-200' : 'text-slate-400 hover:text-slate-600'}`}
-      >
-        ✕
-      </button>
+      <button onClick={() => handleUndo(entry)} className="px-3 py-1 bg-indigo-600 text-white rounded-xl text-xs font-black hover:bg-indigo-500 transition-colors">↩ 撤銷</button>
+      <button onClick={() => useUndoStore.pop()} className={`px-2 py-1 rounded-xl text-xs transition-colors ${isDarkMode ? 'text-slate-400 hover:text-slate-200' : 'text-slate-400 hover:text-slate-600'}`}>✕</button>
     </div>
   );
 };
@@ -186,40 +171,46 @@ const SystemHeader = ({ pwaPrompt, installPWA, isDarkMode, setIsDarkMode, isMana
 );
 
 // ─── FilterPanel ──────────────────────────────────────────────
-const FilterPanel = ({ filter, setFilter, subcategories, subFilter, setSubFilter, keyword, setKeyword, startDate, setStartDate, endDate, setEndDate, showAdvanced, setShowAdvanced, handleSearch, isDarkMode }) => (
-  <div className="pb-3 flex flex-col sm:flex-row gap-3 sm:items-start justify-between w-full">
-    <div className="flex flex-col w-full">
-      <div className="flex gap-1.5 overflow-x-auto no-scrollbar py-1">
-        {['全部', '看板', '待辦', '行程', '好文', '檔案'].map(t => (
-          <button key={t} onClick={() => { setFilter(t); setSubFilter('全部'); }} className={`px-4 py-1.5 rounded-xl text-[11px] font-black whitespace-nowrap transition-all ${filter === t ? 'bg-indigo-600 text-white shadow-md' : (isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-white text-slate-400 border border-slate-200/60')}`}>{t}</button>
-        ))}
-      </div>
-      {filter === '好文' && subcategories.length > 1 && (
-        <div className="pt-2 flex gap-2 overflow-x-auto no-scrollbar">
-          {subcategories.map(sub => (
-            <button key={sub} onClick={() => setSubFilter(sub)} className={`px-3 py-1 rounded-full text-[10px] font-bold whitespace-nowrap transition-all ${subFilter === sub ? 'bg-emerald-500 text-white' : (isDarkMode ? 'bg-slate-700 text-slate-300' : 'bg-slate-100 text-slate-500')}`}># {sub}</button>
+const FilterPanel = ({ filter, setFilter, subcategories, subFilter, setSubFilter, keyword, setKeyword, startDate, setStartDate, endDate, setEndDate, showAdvanced, setShowAdvanced, handleSearch, setIsBrainstormOpen, isDarkMode }) => (
+  <div className="pb-3 flex flex-col w-full">
+    <div className="flex flex-col sm:flex-row gap-3 sm:items-start justify-between w-full">
+      <div className="flex flex-col w-full">
+        <div className="flex gap-1.5 overflow-x-auto no-scrollbar py-1">
+          {['全部', '看板', '待辦', '行程', '好文', '檔案'].map(t => (
+            <button key={t} onClick={() => { setFilter(t); setSubFilter('全部'); }} className={`px-4 py-1.5 rounded-xl text-[11px] font-black whitespace-nowrap transition-all ${filter === t ? 'bg-indigo-600 text-white shadow-md' : (isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-white text-slate-400 border border-slate-200/60')}`}>{t}</button>
           ))}
+          <button onClick={() => setIsBrainstormOpen(true)} className={`px-4 py-1.5 rounded-xl text-[11px] font-black whitespace-nowrap transition-all bg-gradient-to-r from-amber-500 to-pink-500 text-white shadow-md hover:scale-105`}>💡 幫我想想</button>
         </div>
-      )}
+        {filter === '好文' && subcategories.length > 1 && (
+          <div className="pt-2 flex gap-2 overflow-x-auto no-scrollbar">
+            {subcategories.map(sub => (
+              <button key={sub} onClick={() => setSubFilter(sub)} className={`px-3 py-1 rounded-full text-[10px] font-bold whitespace-nowrap transition-all ${subFilter === sub ? 'bg-emerald-500 text-white' : (isDarkMode ? 'bg-slate-700 text-slate-300' : 'bg-slate-100 text-slate-500')}`}># {sub}</button>
+            ))}
+          </div>
+        )}
+      </div>
+      <div className="flex flex-col gap-2 w-full sm:w-auto mt-2 sm:mt-0">
+        <form onSubmit={handleSearch} className="flex gap-2">
+          <input type="text" value={keyword} onChange={(e) => setKeyword(e.target.value)} placeholder="搜尋關鍵字..." className={`px-3 py-1.5 rounded-lg text-sm focus:outline-none flex-1 sm:w-48 transition-colors ${isDarkMode ? 'bg-slate-800 text-white border-slate-700' : 'bg-white border-slate-200'}`} />
+          <button type="button" onClick={() => setShowAdvanced(!showAdvanced)} className={`px-3 py-1.5 rounded-lg text-sm font-bold transition-colors ${showAdvanced ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900 dark:text-indigo-300' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'}`}>進階</button>
+          <button type="submit" className="px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-sm font-bold">搜尋</button>
+        </form>
+        {showAdvanced && (
+          <div className={`flex gap-2 p-2 rounded-lg text-xs w-full animate-fade-in ${isDarkMode ? 'bg-slate-800' : 'bg-slate-100'}`}>
+            <div className="flex flex-col gap-1 flex-1">
+              <label className="text-[10px] text-slate-500 font-bold">開始日期</label>
+              <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className={`px-2 py-1 rounded border outline-none ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-800'}`} />
+            </div>
+            <div className="flex flex-col gap-1 flex-1">
+              <label className="text-[10px] text-slate-500 font-bold">結束日期</label>
+              <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className={`px-2 py-1 rounded border outline-none ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-800'}`} />
+            </div>
+          </div>
+        )}
+      </div>
     </div>
-    <div className="flex flex-col gap-2 w-full sm:w-auto mt-2 sm:mt-0">
-      <form onSubmit={handleSearch} className="flex gap-2">
-        <input type="text" value={keyword} onChange={(e) => setKeyword(e.target.value)} placeholder="搜尋關鍵字..." className={`px-3 py-1.5 rounded-lg text-sm focus:outline-none flex-1 sm:w-48 transition-colors ${isDarkMode ? 'bg-slate-800 text-white border-slate-700' : 'bg-white border-slate-200'}`} />
-        <button type="button" onClick={() => setShowAdvanced(!showAdvanced)} className={`px-3 py-1.5 rounded-lg text-sm font-bold transition-colors ${showAdvanced ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900 dark:text-indigo-300' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'}`}>進階</button>
-        <button type="submit" className="px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-sm font-bold">搜尋</button>
-      </form>
-      {showAdvanced && (
-        <div className={`flex gap-2 p-2 rounded-lg text-xs w-full animate-fade-in ${isDarkMode ? 'bg-slate-800' : 'bg-slate-100'}`}>
-          <div className="flex flex-col gap-1 flex-1">
-            <label className="text-[10px] text-slate-500 font-bold">開始日期</label>
-            <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className={`px-2 py-1 rounded border outline-none ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-800'}`} />
-          </div>
-          <div className="flex flex-col gap-1 flex-1">
-            <label className="text-[10px] text-slate-500 font-bold">結束日期</label>
-            <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className={`px-2 py-1 rounded border outline-none ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-800'}`} />
-          </div>
-        </div>
-      )}
+    <div className={`mt-3 px-3 py-2 rounded-lg text-[11px] font-bold tracking-wide ${isDarkMode ? 'bg-indigo-900/30 text-indigo-300' : 'bg-indigo-50 text-indigo-600'}`}>
+      💡 系統升級提示：透過 LINE 傳送「思考 [名詞/連結]」將強制開啟 AI 網路檢索；傳送「生成圖片 [關鍵字]」可啟動 AI 繪圖；傳送 YouTube 網址自動提取影片資訊。
     </div>
   </div>
 );
@@ -250,7 +241,7 @@ const InfoCard = ({ item, isManageMode, selectedIds, toggleSelection, setEditing
             {item?.icon} {item?.type?.toUpperCase()}
           </div>
           {item?.type === 'article' && getTags(item.subcategory).map(tag => (
-            <span key={tag} className="px-2 py-1 rounded text-[10px] font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-400">{tag}</span>
+             <span key={tag} className="px-2 py-1 rounded text-[10px] font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-400">{tag}</span>
           ))}
           <span className="text-[10px] font-bold text-slate-400 ml-auto whitespace-nowrap">{item?.date} {item?.time}</span>
         </div>
@@ -325,6 +316,108 @@ const KanbanView = ({ items, renderCard, isDarkMode }) => (
   </div>
 );
 
+// ─── Brainstorm Modal ─────────────────────────────────────────
+const BrainstormModal = ({ isDarkMode, setIsBrainstormOpen, filteredContext, executeAction }) => {
+  const [query, setQuery] = useState('');
+  const [isSearching, setIsSearching] = useState(false);
+  const [result, setResult] = useState(null);
+
+  const handleBrainstorm = async () => {
+    if (!query.trim()) return;
+    setIsSearching(true);
+    setResult(null);
+    try {
+      const res = await fetch(GAS_URL, {
+        redirect: 'follow',
+        method: 'POST',
+        body: JSON.stringify({ action: 'brainstorm', query, context: filteredContext })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setResult(data.result);
+      } else {
+        setResult({ title: '分析失敗', content: '後端發生未知錯誤。' });
+      }
+    } catch (e) {
+      setResult({ title: '連線異常', content: '網路無法連線，請稍後再試。' });
+    }
+    setIsSearching(false);
+  };
+
+  const handleSaveToWall = () => {
+    if (!result) return;
+    const newId = crypto.randomUUID();
+    executeAction('updateFull', {
+      id: newId,
+      type: 'article',
+      subcategory: '深度思考',
+      title: encodeURIComponent(result.title),
+      content: encodeURIComponent(result.content),
+      color: 'bg-indigo-50 text-indigo-700',
+      icon: '💡'
+    }, "已儲存至資訊牆！");
+    setIsBrainstormOpen(false);
+  };
+
+  return (
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-sm">
+      <div className={`rounded-[2rem] p-6 w-full max-w-lg shadow-2xl flex flex-col max-h-[90vh] ${isDarkMode ? 'bg-slate-800 text-white' : 'bg-white text-slate-800'}`}>
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-lg font-black flex items-center gap-2">
+            <span className="text-2xl">💡</span> AI 深度網路檢索與分析
+          </h3>
+          <button onClick={() => setIsBrainstormOpen(false)} className="text-slate-400 hover:text-slate-600 text-xl font-bold">✕</button>
+        </div>
+        <p className="text-xs text-slate-500 mb-4 font-medium leading-relaxed">
+          強制啟動 Google Search 穿透驗證，可輸入名詞或網址。系統將主動進行負面與法規檢索。
+        </p>
+        
+        <div className="flex flex-col gap-3 flex-1 overflow-hidden">
+          <div className="flex gap-2">
+            <input 
+              type="text" 
+              value={query} 
+              onChange={(e) => setQuery(e.target.value)} 
+              onKeyDown={(e) => e.key === 'Enter' && handleBrainstorm()}
+              placeholder="輸入欲深入查證的產品名稱或網址..." 
+              className={`flex-1 px-4 py-3 rounded-xl text-sm font-bold outline-none border focus:border-indigo-500 ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-slate-50 border-slate-200'}`} 
+            />
+            <button 
+              onClick={handleBrainstorm} 
+              disabled={isSearching || !query.trim()} 
+              className="bg-gradient-to-r from-indigo-500 to-indigo-600 text-white px-6 rounded-xl text-sm font-black shadow-md disabled:opacity-50 hover:scale-105 transition-transform"
+            >
+              {isSearching ? '檢索中...' : '開始分析'}
+            </button>
+          </div>
+
+          {isSearching && (
+            <div className={`flex-1 rounded-2xl flex flex-col items-center justify-center p-8 border border-dashed ${isDarkMode ? 'border-slate-700 bg-slate-900/50' : 'border-slate-300 bg-slate-50'}`}>
+              <div className="text-4xl animate-bounce mb-2">🌐</div>
+              <p className="text-sm font-bold text-indigo-500 animate-pulse">正在執行 Google Search 穿透驗證與法規比對...</p>
+            </div>
+          )}
+
+          {result && !isSearching && (
+            <div className={`flex-1 overflow-y-auto p-5 rounded-2xl border ${isDarkMode ? 'border-slate-700 bg-slate-900/50' : 'border-slate-200 bg-slate-50'}`}>
+              <h4 className="text-lg font-black mb-3 text-indigo-500">{result.title}</h4>
+              <div className="text-sm font-medium leading-relaxed whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(result.content) }} />
+            </div>
+          )}
+        </div>
+
+        {result && !isSearching && (
+          <div className="mt-4 pt-4 border-t border-slate-200 dark:border-slate-700 flex gap-3">
+            <button onClick={handleSaveToWall} className="flex-1 py-3 rounded-xl bg-indigo-600 text-white font-black text-sm shadow-lg hover:bg-indigo-500 transition-colors">
+              📥 將報告儲存至資訊牆
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
 // ─── App 主元件 ───────────────────────────────────────────────
 export default function App() {
   const [items, setItems] = useState([]);
@@ -347,14 +440,19 @@ export default function App() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [isError, setIsError] = useState(false);
   const [pwaPrompt, setPwaPrompt] = useState(null);
+  
   const [isAskAiOpen, setIsAskAiOpen] = useState(false);
   const [askAiQuery, setAskAiQuery] = useState('');
   const [chatHistory, setChatHistory] = useState([]);
   const [isAskAiLoading, setIsAskAiLoading] = useState(false);
   const chatScrollRef = useRef(null);
+  
   const [isTagManagerOpen, setIsTagManagerOpen] = useState(false);
   const [tagMergeSources, setTagMergeSources] = useState([]);
   const [tagMergeTarget, setTagMergeTarget] = useState('');
+  
+  const [isBrainstormOpen, setIsBrainstormOpen] = useState(false);
+  
   const pendingTimers = useRef({});
 
   const showMessage = useCallback((msg) => { setMessage(msg); setTimeout(() => setMessage(null), 3000); }, []);
@@ -409,7 +507,7 @@ export default function App() {
     setSelectedIds(newSet);
   };
 
-  // ─── executeAction（含復原） ──────────────────────────────
+  // ─── executeAction ──────────────────────────────
   const executeAction = async (action, idsOrItem, successMsg) => {
     setIsProcessing(true);
     try {
@@ -418,19 +516,16 @@ export default function App() {
       else if (action === 'delete') { payload.id = idsOrItem.id; payload.url = encodeURIComponent(idsOrItem.url); }
       else Object.assign(payload, idsOrItem);
 
-      // 刪除 / 封存：先樂觀更新，5 秒後才真正送出
       if (action === 'delete' || action === 'deleteBatch' || action === 'archiveBatch') {
         const affectedIds = action === 'delete' ? [idsOrItem.id] : idsOrItem;
         const snapshot = items.filter(i => affectedIds.includes(i.id));
 
-        // 樂觀移除
         setItems(prev => prev.filter(i => !affectedIds.includes(i.id)));
         if (action !== 'delete') { setSelectedIds(new Set()); setIsManageMode(false); }
         if (action === 'delete') setConfirmDelete(null);
 
         let undone = false;
 
-        // 5 秒後才真正送出
         const timerId = setTimeout(async () => {
           if (undone) return;
           try {
@@ -458,7 +553,6 @@ export default function App() {
             clearTimeout(timerId);
             delete pendingTimers.current[entryId];
             setItems(prev => {
-              // 插回原位（依 id 順序）
               const combined = [...snapshot, ...prev];
               const seen = new Set();
               return combined.filter(i => { if (seen.has(i.id)) return false; seen.add(i.id); return true; });
@@ -472,12 +566,23 @@ export default function App() {
         return;
       }
 
-      // updateFull 維持原邏輯
+      // updateFull (包含 Brainstorm 新增) 維持原邏輯
       const res = await fetch(GAS_URL, { redirect: 'follow', method: 'POST', body: JSON.stringify(payload) });
       const result = await res.json();
       if (result?.success) {
         if (action === 'updateFull') {
-          setItems(prev => prev.map(i => i.id === idsOrItem.id ? {...i, ...idsOrItem} : i));
+          // 如果是已存在的 id 則更新，否則(如 Brainstorm 新增) 則插入前方
+          setItems(prev => {
+            const exists = prev.find(i => i.id === idsOrItem.id);
+            if (exists) return prev.map(i => i.id === idsOrItem.id ? {...i, ...idsOrItem} : i);
+            const newItem = {
+                id: idsOrItem.id, type: idsOrItem.type, subcategory: decodeURIComponent(idsOrItem.subcategory),
+                title: decodeURIComponent(idsOrItem.title), content: decodeURIComponent(idsOrItem.content),
+                date: new Date().toLocaleDateString('en-CA'), time: new Date().toTimeString().substring(0,5),
+                url: '#', icon: idsOrItem.icon || '📄', color: idsOrItem.color || 'bg-slate-50 text-slate-700'
+            };
+            return [newItem, ...prev];
+          });
           setEditingItem(null);
         }
         showMessage(successMsg);
@@ -486,7 +591,6 @@ export default function App() {
     setIsProcessing(false);
   };
 
-  // ─── handleToggleTodo（含復原） ───────────────────────────
   const handleToggleTodo = async (id, currentContent, lineIndex) => {
     const oldContent = currentContent;
     const lines = currentContent.split('\n');
@@ -511,7 +615,6 @@ export default function App() {
     fetch(GAS_URL, { redirect: 'follow', method: 'POST', body: JSON.stringify({ action: 'updateFull', id, content: encodeURIComponent(newContent) }) });
   };
 
-  // ─── handleToggleCompleted（含復原） ─────────────────────
   const handleToggleCompleted = async (item, e) => {
     e.preventDefault(); e.stopPropagation();
     const isCompleted = item?.title?.includes('[已完成]');
@@ -549,7 +652,6 @@ export default function App() {
     }) });
   };
 
-  // ─── handleMergeTags ──────────────────────────────────────
   const handleMergeTags = async () => {
     if (tagMergeSources.length === 0 || !tagMergeTarget || tagMergeSources.includes(tagMergeTarget)) return;
     setIsProcessing(true);
@@ -571,7 +673,6 @@ export default function App() {
     setIsProcessing(false);
   };
 
-  // ─── handleAskAI ──────────────────────────────────────────
   const handleAskAI = async () => {
     if (!askAiQuery.trim()) return;
     const currentQuery = askAiQuery;
@@ -592,7 +693,6 @@ export default function App() {
     if (chatScrollRef.current) chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
   }, [chatHistory, isAskAiLoading]);
 
-  // ─── 過濾 & 排序 ──────────────────────────────────────────
   const filterMap = { '全部': 'all', '待辦': 'todo', '行程': 'event', '好文': 'article', '檔案': 'file' };
 
   const subcategories = useMemo(() => {
@@ -691,6 +791,7 @@ export default function App() {
           endDate={endDate} setEndDate={setEndDate}
           showAdvanced={showAdvanced} setShowAdvanced={setShowAdvanced}
           handleSearch={(e) => { e.preventDefault(); setCurrentPage(1); }}
+          setIsBrainstormOpen={setIsBrainstormOpen}
           isDarkMode={isDarkMode}
         />
 
@@ -715,7 +816,6 @@ export default function App() {
         {isLoading && !isError && <div className="py-10 text-center text-indigo-400 font-bold animate-pulse text-sm">數據同步中...</div>}
       </main>
 
-      {/* Tag Manager Modal */}
       {isTagManagerOpen && (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-sm">
           <div className={`rounded-[2rem] p-6 w-full max-w-md shadow-2xl flex flex-col max-h-[90vh] ${isDarkMode ? 'bg-slate-800 text-white' : 'bg-white text-slate-800'}`}>
@@ -751,6 +851,16 @@ export default function App() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Brainstorm Modal */}
+      {isBrainstormOpen && (
+        <BrainstormModal 
+          isDarkMode={isDarkMode} 
+          setIsBrainstormOpen={setIsBrainstormOpen}
+          filteredContext={filteredAndSorted.map(i => `[${i.type}] ${i.title}: ${i.content}`).join('\n\n').substring(0, 8000)}
+          executeAction={executeAction}
+        />
       )}
 
       {/* AI Chat */}
@@ -821,7 +931,6 @@ export default function App() {
               <button onClick={() => setEditingItem(null)} className={`flex-1 py-2.5 rounded-xl font-black text-sm ${isDarkMode ? 'bg-slate-700' : 'bg-slate-100'}`}>取消</button>
               <button
                 onClick={() => {
-                  // 儲存前備份舊資料
                   const snapshot = items.find(i => i.id === editingItem.id);
                   if (snapshot) {
                     useUndoStore.push({
@@ -847,7 +956,7 @@ export default function App() {
                     content: encodeURIComponent(editingItem.content || ''),
                     type: editingItem.type,
                     subcategory: encodeURIComponent(editingItem.subcategory || '')
-                  }, '更新成功');
+                  }, "更新成功");
                 }}
                 disabled={isProcessing}
                 className="flex-1 py-2.5 rounded-xl bg-indigo-600 text-white font-black text-sm shadow-lg disabled:opacity-50"
@@ -873,10 +982,8 @@ export default function App() {
         </div>
       )}
 
-      {/* Undo Toast */}
       <UndoToast isDarkMode={isDarkMode} />
 
-      {/* Message Toast */}
       {message && (
         <div className="fixed top-20 left-1/2 transform -translate-x-1/2 z-[9999] px-6 py-3 bg-slate-800 text-white rounded-full shadow-2xl text-sm font-black animate-fade-in border border-slate-700">{message}</div>
       )}
