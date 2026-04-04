@@ -1,16 +1,12 @@
-import { defineConfig } from 'vite';
-import react from '@vitejs/plugin-react';
-import { viteSingleFile } from 'vite-plugin-singlefile';
+import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
 
+// https://vitejs.dev/config/
 export default defineConfig({
-  plugins: [
-    react(),
-    viteSingleFile()
-  ],
-  base: './', // 新增此行
+  plugins: [react()],
+  // 強制指定 GitHub Pages 專案子目錄，解決資源 404 找不到的問題
+  base: '/smartboard/', 
   build: {
-    target: 'esnext',
-    cssCodeSplit: false,
-    codeSplitting: false
+    outDir: 'dist',
   }
-});
+})
