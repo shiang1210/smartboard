@@ -521,10 +521,18 @@ export default function App() {
         if (action === 'updateFull') {
           setItems(prev => {
             const exists = prev.find(i => i.id === idsOrItem.id);
-            if (exists) return prev.map(i => i.id === idsOrItem.id ? {...i, ...idsOrItem} : i);
+            if (exists) {
+                return prev.map(i => i.id === idsOrItem.id ? {
+                    ...i, 
+                    ...idsOrItem, 
+                    title: decodeURIComponent(idsOrItem.title || ''), 
+                    content: decodeURIComponent(idsOrItem.content || ''), 
+                    subcategory: decodeURIComponent(idsOrItem.subcategory || '')
+                } : i);
+            }
             const newItem = {
-                id: idsOrItem.id, type: idsOrItem.type, subcategory: decodeURIComponent(idsOrItem.subcategory),
-                title: decodeURIComponent(idsOrItem.title), content: decodeURIComponent(idsOrItem.content),
+                id: idsOrItem.id, type: idsOrItem.type, subcategory: decodeURIComponent(idsOrItem.subcategory || ''),
+                title: decodeURIComponent(idsOrItem.title || ''), content: decodeURIComponent(idsOrItem.content || ''),
                 date: new Date().toLocaleDateString('en-CA'), time: new Date().toTimeString().substring(0,5),
                 url: idsOrItem.url || '#', icon: idsOrItem.icon || '📄', color: idsOrItem.color || 'bg-slate-50 text-slate-700'
             };
@@ -645,7 +653,6 @@ export default function App() {
     setIsGeneratingImage(true);
     setGeneratedImage(null);
     const seed = Math.floor(Math.random() * 100000);
-    // 強制加上風格提示詞以提升還原度
     const enhancedQuery = `${imageQuery}, anime style, high quality, official art`;
     const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(enhancedQuery)}?nologo=true&seed=${seed}`;
     const img = new Image();
@@ -704,10 +711,8 @@ export default function App() {
     let upcomingEvents = baseFiltered.filter(i => i.type === 'event' && (i.date || '') >= todayStr);
     let others = baseFiltered.filter(i => !(i.type === 'event' && (i.date || '') >= todayStr));
     
-    // 行程類：未來時間正向排序
     upcomingEvents.sort((a, b) => ((a.date || '') + (a.time || '')).localeCompare((b.date || '') + (b.time || '')));
     
-    // 其他類（文章、檔案、待辦）：新到舊降冪排序
     others.sort((a, b) => {
         const dateTimeA = (a.date || '') + (a.time || '');
         const dateTimeB = (b.date || '') + (b.time || '');
