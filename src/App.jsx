@@ -300,22 +300,22 @@ const HelpModal = ({
         </div>
 
         <div className={`flex gap-1 p-1 rounded-xl mb-4 flex-shrink-0 ${isDarkMode ? 'bg-[#0f172a]' : 'bg-slate-100'}`}>
-          <button onClick={() => setTab('brainstorm')} className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all ${tab === 'brainstorm' ? (isDarkMode ? 'bg-[#334155] shadow text-indigo-300' : 'bg-white shadow text-indigo-600') : 'text-slate-500'}`}>深度檢索</button>
+          <button onClick={() => setTab('brainstorm')} className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all ${tab === 'brainstorm' ? (isDarkMode ? 'bg-[#334155] shadow text-indigo-300' : 'bg-white shadow text-indigo-600') : 'text-slate-500'}`}>名詞解釋與解析</button>
           <button onClick={() => setTab('chat')} className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all ${tab === 'chat' ? (isDarkMode ? 'bg-[#334155] shadow text-emerald-300' : 'bg-white shadow text-emerald-600') : 'text-slate-500'}`}>知識庫對話</button>
           <button onClick={() => setTab('image')} className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all ${tab === 'image' ? (isDarkMode ? 'bg-[#334155] shadow text-pink-300' : 'bg-white shadow text-pink-600') : 'text-slate-500'}`}>AI 繪圖</button>
         </div>
 
         {tab === 'brainstorm' && (
           <div className="flex flex-col gap-3 flex-1 overflow-hidden">
-            <p className={`text-xs font-medium ${isDarkMode ? 'text-[#94a3b8]' : 'text-slate-500'}`}>強制啟動網路搜尋驗證，可輸入名詞或網址，系統將進行法規與事實比對。</p>
+            <p className={`text-xs font-medium ${isDarkMode ? 'text-[#94a3b8]' : 'text-slate-500'}`}>輸入網址或名詞，系統將擷取摘要、檢核法規或搜尋即時資訊。</p>
             <div className="flex gap-2 flex-shrink-0">
-              <input type="text" value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleBrainstorm()} placeholder="輸入查證主題..." className={`flex-1 px-4 py-2.5 rounded-xl text-sm font-bold outline-none border focus:border-indigo-500 ${isDarkMode ? 'bg-[#0f172a] border-[#334155] text-[#ffffff]' : 'bg-slate-50 border-slate-200'}`} />
-              <button onClick={handleBrainstorm} disabled={isSearching || !query.trim()} className="bg-indigo-600 text-white px-5 rounded-xl text-sm font-black disabled:opacity-50 hover:bg-indigo-500">{isSearching ? '處理中' : '思考'}</button>
+              <input type="text" value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleBrainstorm()} placeholder="輸入查證主題或網址..." className={`flex-1 px-4 py-2.5 rounded-xl text-sm font-bold outline-none border focus:border-indigo-500 ${isDarkMode ? 'bg-[#0f172a] border-[#334155] text-[#ffffff]' : 'bg-slate-50 border-slate-200'}`} />
+              <button onClick={handleBrainstorm} disabled={isSearching || !query.trim()} className="bg-indigo-600 text-white px-5 rounded-xl text-sm font-black disabled:opacity-50 hover:bg-indigo-500">{isSearching ? '處理中' : '解析'}</button>
             </div>
             {isSearching && (
               <div className="flex-1 flex flex-col items-center justify-center p-8 text-indigo-500">
                 <div className="text-4xl animate-bounce mb-2">🌐</div>
-                <p className="text-sm font-bold animate-pulse">執行網路穿透與資料庫比對...</p>
+                <p className="text-sm font-bold animate-pulse">執行網路穿透與資料比對...</p>
               </div>
             )}
             {result && !isSearching && (
@@ -645,7 +645,9 @@ export default function App() {
     setIsGeneratingImage(true);
     setGeneratedImage(null);
     const seed = Math.floor(Math.random() * 100000);
-    const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(imageQuery)}?nologo=true&seed=${seed}`;
+    // 強制加上風格提示詞以提升還原度
+    const enhancedQuery = `${imageQuery}, anime style, high quality, official art`;
+    const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(enhancedQuery)}?nologo=true&seed=${seed}`;
     const img = new Image();
     img.onload = () => {
       setGeneratedImage(url);
@@ -701,7 +703,17 @@ export default function App() {
 
     let upcomingEvents = baseFiltered.filter(i => i.type === 'event' && (i.date || '') >= todayStr);
     let others = baseFiltered.filter(i => !(i.type === 'event' && (i.date || '') >= todayStr));
+    
+    // 行程類：未來時間正向排序
     upcomingEvents.sort((a, b) => ((a.date || '') + (a.time || '')).localeCompare((b.date || '') + (b.time || '')));
+    
+    // 其他類（文章、檔案、待辦）：新到舊降冪排序
+    others.sort((a, b) => {
+        const dateTimeA = (a.date || '') + (a.time || '');
+        const dateTimeB = (b.date || '') + (b.time || '');
+        return dateTimeB.localeCompare(dateTimeA);
+    });
+    
     let result = [...upcomingEvents, ...others];
 
     if (keyword) {
