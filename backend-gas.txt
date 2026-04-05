@@ -1,0 +1,629 @@
+const PROPS = PropertiesService.getScriptProperties();
+
+
+function safeResponse(data) {
+ return ContentService.createTextOutput(JSON.stringify(data)).setMimeType(ContentService.MimeType.JSON);
+}
+
+
+function initializeSystem() {
+ const tempDoc = DocumentApp.create('Auth_Temp');
+ DriveApp.getFileById(tempDoc.getId()).setTrashed(true);
+ const sheetId = PROPS.getProperty('SHEET_ID');
+ if (!sheetId) return "錯誤：請先在指令碼屬性設定 SHEET_ID";
+ const ss = SpreadsheetApp.openById(sheetId);
+ const requiredSheets = ['資料', '設定', '99_系統日誌', '備份', '歷史封存', '標籤字典'];
+  const defaultPrompt = '請綜合分析以下內容。待辦事項 type 為 "todo" (content 條列待辦，務必純文字格式)。行程活動 type 為 "event" (提取 eventDate 為 YYYY-MM-DD，eventTime 為 HH:mm，無則留空)。文章檔案或社群貼文 type 為 "article" (提取精簡分類至 subcategory)。回傳純 JSON 格式，包含 type, subcategory, title, content, eventDate, eventTime 六個欄位。禁止使用 Markdown 標籤，禁止將欄位內容設定為陣列結構。【精確重現要求】：content 欄位請盡可能「完整保留原文內容」，嚴禁擅自替換詞彙、縮寫、改寫或腦補。若 [使用者輸入] 包含具體描述文字，請優先以 [使用者輸入] 的原文為主！【極重要防呆】：若內容充滿「登入」、「註冊」或無意義的網頁框架碼(如Threads/IG等受限網頁)，絕對禁止自行編造內容！請誠實將 title 設為「網頁連結 (內容受限)」，content 註明「系統無法自動讀取此社群或動態網頁，請點擊原連結查看。」【強制語系】：所有輸出結果必須嚴格使用「繁體中文（zh-TW）」撰寫，絕對禁止輸出日文或其他語言。';
+
+
+ requiredSheets.forEach(name => {
+   let sheet = ss.getSheetByName(name);
+   if (!sheet) {
+     sheet = ss.insertSheet(name);
+     if (name === '資料') {
+       sheet.appendRow(['ID', 'Type', 'SubCategory', 'Title', 'Subtitle', 'Content', 'Date', 'Time', 'URL', 'Icon', 'Color']);
+       sheet.setFrozenRows(1);
+     } else if (name === '設定') {
+       sheet.appendRow(['LLM_ENGINE', 'Groq']);
+       sheet.appendRow(['GEMINI_API_KEY', '']);
+       sheet.appendRow(['GROQ_API_KEY', '']);
+       sheet.appendRow(['HUGGINGFACE_TOKEN', '']);
+       sheet.appendRow(['LINE_ACCESS_TOKEN', '']);
+       sheet.appendRow(['LINE_USER_ID', '自動擷取綁定']);
+       sheet.appendRow(['DRIVE_FOLDER_ID', '']);
+       sheet.appendRow(['SYSTEM_PROMPT', defaultPrompt]);
+       sheet.setFrozenRows(1);
+     } else if (name === '備份') {
+       sheet.appendRow(['時間', '前端原始碼']);
+       sheet.setFrozenRows(1);
+     } else if (name === '標籤字典') {
+       sheet.appendRow(['原始標籤', '標準標籤']);
+       sheet.setFrozenRows(1);
+     }
+   }
+ });
+ return "初始化完成：已補齊設定欄位。";
+}
+
+
+function logSystem(level, msg, detail = "") {
+ try {
+   const sheetId = PROPS.getProperty('SHEET_ID');
+   const ss = SpreadsheetApp.openById(sheetId);
+   const sheet = ss.getSheetByName('99_系統日誌') || ss.insertSheet('99_系統日誌');
+   sheet.appendRow([new Date(), level, msg, detail]);
+ } catch (e) {}
+}
+
+
+function doGet(e) {
+ try {
+   const sheetId = PROPS.getProperty('SHEET_ID');
+   if (!sheetId) return safeResponse({ status: 'error', message: '系統未設定 SHEET_ID' });
+
+
+   const ss = SpreadsheetApp.openById(sheetId);
+   const action = e.parameter.action || 'export';
+
+
+   if (action === 'export' || action === 'getData') {
+     const sheet = ss.getSheetByName('資料');
+     const data = sheet.getDataRange().getValues();
+     const headers = data[0];
+     const rows = data.slice(1);
+
+
+     const formattedData = rows.map(row => {
+       let obj = {};
+       headers.forEach((header, index) => {
+         obj[header.toLowerCase()] = row[index];
+       });
+       return {
+         id: obj.id, type: obj.type, subcategory: obj.subcategory,
+         title: obj.title, content: obj.content,
+         date: obj.date instanceof Date ? Utilities.formatDate(obj.date, "GMT+8", "yyyy-MM-dd") : obj.date,
+         time: obj.time instanceof Date ? Utilities.formatDate(obj.time, "GMT+8", "HH:mm") : obj.time,
+         url: obj.url, icon: obj.icon, color: obj.color
+       };
+     });
+
+
+     if (action === 'getData') return safeResponse(formattedData);
+
+
+     const tagSheet = ss.getSheetByName('標籤字典');
+     let tags = [];
+     if (tagSheet) {
+       const tagData = tagSheet.getDataRange().getValues();
+       tags = tagData.slice(1).map(row => ({ origin: row[0], standard: row[1] }));
+     }
+     return safeResponse({ status: 'success', data: formattedData, tags: tags });
+   }
+
+
+   return safeResponse({ status: 'error', message: '未知的操作指令' });
+ } catch (error) {
+   logSystem('ERROR', 'doGet 例外錯誤', error.toString());
+   return safeResponse({ status: 'error', message: error.toString() });
+ }
+}
+
+
+function searchDuckDuckGo(query) {
+ try {
+   const url = 'https://html.duckduckgo.com/html/?q=' + encodeURIComponent(query);
+   const response = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+   const html = response.getContentText();
+  
+   const results = [];
+   const regex = /<a class="result__url" href="([^"]+)".*?>(.*?)<\/a>.*?<a class="result__snippet[^>]*>(.*?)<\/a>/gs;
+   let match;
+   let count = 0;
+   while ((match = regex.exec(html)) !== null && count < 5) {
+     let link = match[1];
+     if (link.startsWith('//duckduckgo.com/l/?uddg=')) {
+       link = decodeURIComponent(link.split('uddg=')[1].split('&')[0]);
+     }
+     results.push(`標題：${match[2].replace(/<[^>]+>/g, '')}\n網址：${link}\n摘要：${match[3].replace(/<[^>]+>/g, '')}`);
+     count++;
+   }
+   return results.join('\n\n');
+ } catch (e) {
+   return '搜尋失敗：' + e.toString();
+ }
+}
+
+
+function parseUrlContent(url) {
+ try {
+   const jinaUrl = 'https://r.jina.ai/' + url;
+   const response = UrlFetchApp.fetch(jinaUrl, { muteHttpExceptions: true });
+   return response.getContentText().substring(0, 10000);
+ } catch (e) {
+   return '無法解析此網址內容。';
+ }
+}
+
+
+function extractUrlFromText(text) {
+ const urlRegex = /(https?:\/\/[^\s]+)/g;
+ const match = text.match(urlRegex);
+ return match ? match[0] : null;
+}
+
+
+function doPost(e) {
+ try {
+   const json = JSON.parse(e.postData.contents);
+   const sheetId = PROPS.getProperty('SHEET_ID');
+   const ss = SpreadsheetApp.openById(sheetId);
+   const settingsSheet = ss.getSheetByName('設定');
+   const settings = settingsSheet.getDataRange().getValues();
+
+
+   if (json.action) {
+     const sheet = ss.getSheetByName('資料');
+    
+     if (json.action === 'brainstorm') {
+       const query = json.query;
+       let aiPrompt = '';
+       let systemPrompt = '';
+       let answer = '';
+       let title = '';
+
+
+       if (query.startsWith('http://') || query.startsWith('https://')) {
+         const pageContent = parseUrlContent(query);
+         systemPrompt = "你是一位精準的資料分析師。請依據提供的網頁內容，產出一份結構化報告，包含：1. 重點摘要列點式 2. 法規檢核指出是否有違法疑慮或需注意的規範 3. 負面偵測指出是否有潛在的爭議或負面情緒。若內容過少，請說明可能遭遇爬蟲阻擋。";
+         aiPrompt = `網址：${query}\n\n網頁內容：\n${pageContent}\n\n請開始分析：`;
+         title = '網頁深度解析';
+       } else {
+         const searchResults = searchDuckDuckGo(query);
+         systemPrompt = "你是一位專業的百科助理。請綜合以下搜尋結果，給出精準的名詞解釋與最新資訊。你必須在回應的最後附上：1. 參考的來源網址 2. 一個延伸的 YouTube 搜尋連結格式為 https://www.youtube.com/results?search_query=關鍵字。";
+         aiPrompt = `使用者查詢：${query}\n\n即時搜尋結果：\n${searchResults}\n\n請提供總結報告：`;
+         title = '名詞解釋：' + query;
+       }
+
+
+       answer = chatWithLLM(systemPrompt + "\n\n" + aiPrompt, settings);
+       return safeResponse({ success: true, result: { title: title, content: answer } });
+     }
+
+
+     if (json.action === 'askAI') {
+       const prompt = `${json.context}\n\n歷史對話：\n${json.history}\n\n使用者最新問題：${json.question}\n請根據上列資料庫內容與歷史對話回答，必須使用繁體中文。`;
+       const answer = chatWithLLM(prompt, settings);
+       return safeResponse({ success: true, answer: answer });
+     }
+
+
+     if (json.action === 'updateFull') {
+       const data = sheet.getDataRange().getValues();
+       let rowIndex = -1;
+       for (let i = 1; i < data.length; i++) {
+         if (data[i][0] === json.id) { rowIndex = i + 1; break; }
+       }
+
+
+       const dTitle = json.title ? decodeURIComponent(json.title) : '無標題';
+       const dContent = json.content ? decodeURIComponent(json.content) : '';
+       const dSub = json.subcategory ? decodeURIComponent(json.subcategory) : '';
+       const date = json.date || Utilities.formatDate(new Date(), "GMT+8", "yyyy-MM-dd");
+       const time = json.time || Utilities.formatDate(new Date(), "GMT+8", "HH:mm");
+       const url = json.url || '#';
+       const icon = json.icon || '📄';
+       const color = json.color || 'bg-slate-50 text-slate-700';
+
+
+       if (rowIndex > -1) {
+         sheet.getRange(rowIndex, 1, 1, 11).setValues([[
+           json.id, json.type, dSub, dTitle, '', dContent, date, time, url, icon, color
+         ]]);
+       } else {
+          sheet.insertRowBefore(2);
+          sheet.getRange(2, 1, 1, 11).setValues([[
+            json.id, json.type, dSub, dTitle, '', dContent, date, time, url, icon, color
+          ]]);
+       }
+       return safeResponse({ success: true });
+     }
+
+
+     if (json.action === 'delete') {
+       const data = sheet.getDataRange().getValues();
+       for (let i = 1; i < data.length; i++) {
+         if (data[i][0] === json.id) {
+           sheet.deleteRow(i + 1);
+           break;
+         }
+       }
+       return safeResponse({ success: true });
+     }
+    
+     if (json.action === 'deleteBatch' || json.action === 'archiveBatch') {
+        const ids = JSON.parse(decodeURIComponent(json.ids));
+        const data = sheet.getDataRange().getValues();
+        let actionCount = 0;
+        for (let i = data.length - 1; i >= 1; i--) {
+           if (ids.includes(data[i][0])) {
+              if (json.action === 'archiveBatch') {
+                 const archiveSheet = ss.getSheetByName('歷史封存') || ss.insertSheet('歷史封存');
+                 archiveSheet.appendRow(data[i]);
+              }
+              sheet.deleteRow(i + 1);
+              actionCount++;
+           }
+        }
+        return safeResponse({ success: true, count: actionCount });
+     }
+
+
+     if (json.action === 'mergeTags') {
+        const oldTags = json.oldTags;
+        const newTag = json.newTag;
+        const data = sheet.getDataRange().getValues();
+        for (let i = 1; i < data.length; i++) {
+           if (data[i][1] === 'article' && data[i][2]) {
+              let tags = data[i][2].toString().split(/[,、]/).map(s => s.trim());
+              let hasChange = false;
+              tags = tags.map(t => {
+                 if (oldTags.includes(t)) { hasChange = true; return newTag; }
+                 return t;
+              });
+              if (hasChange) {
+                 sheet.getRange(i + 1, 3).setValue([...new Set(tags)].join(', '));
+              }
+           }
+        }
+        const dictSheet = ss.getSheetByName('標籤字典') || ss.insertSheet('標籤字典');
+        oldTags.forEach(t => dictSheet.appendRow([t, newTag]));
+        return safeResponse({ success: true });
+     }
+
+
+     return safeResponse({ success: false, message: '未知的操作指令' });
+   }
+
+
+   if (json.events && json.events.length > 0) {
+     const event = json.events[0];
+     const replyToken = event.replyToken;
+     const type = event.message.type;
+    
+     let lineToken = "";
+     settings.forEach(row => { if (row[0] === 'LINE_ACCESS_TOKEN') lineToken = row[1]; });
+
+
+     if (event.source && event.source.userId) {
+        settings.forEach((row, idx) => {
+           if (row[0] === 'LINE_USER_ID' && row[1] === '自動擷取綁定') {
+              settingsSheet.getRange(idx + 1, 2).setValue(event.source.userId);
+           }
+        });
+     }
+
+
+     if (type === 'text') {
+       const text = event.message.text.trim();
+
+
+       if (text.startsWith('思考 ')) {
+         const query = text.replace('思考 ', '');
+         const searchResults = searchDuckDuckGo(query);
+         const systemPrompt = "你是一位專業的百科助理。請綜合以下搜尋結果，給出精準的名詞解釋與最新資訊。你必須在回應的最後附上參考的來源網址與延伸的 YouTube 搜尋連結格式為 https://www.youtube.com/results?search_query=關鍵字。";
+         const aiPrompt = `使用者查詢：${query}\n\n即時搜尋結果：\n${searchResults}\n\n請提供總結報告：`;
+         const answer = chatWithLLM(systemPrompt + "\n\n" + aiPrompt, settings);
+        
+         ss.getSheetByName('資料').appendRow([ Utilities.getUuid(), 'article', '系統分析', '名詞解釋：' + query, '', answer, Utilities.formatDate(new Date(), "GMT+8", "yyyy-MM-dd"), Utilities.formatDate(new Date(), "GMT+8", "HH:mm"), '#', '🔍', 'bg-blue-50 text-blue-700' ]);
+         // 註解以節省 LINE 額度
+         // replyToLine(replyToken, [{type: 'text', text: `深度檢索完成：\n標題：${query}\n分類：系統分析`}], lineToken);
+         return safeResponse({status: "success"});
+       }
+
+
+       if (text.startsWith('生成圖片 ')) {
+         const prompt = text.replace('生成圖片 ', '');
+         const enhancedPrompt = `${prompt}, anime style, high quality, official art`;
+         const imgUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(enhancedPrompt)}`;
+         let folderId = "";
+         settings.forEach(row => { if (row[0] === 'DRIVE_FOLDER_ID') folderId = row[1]; });
+         const folder = folderId ? DriveApp.getFolderById(folderId) : DriveApp.getRootFolder();
+        
+         const todayStr = Utilities.formatDate(new Date(), "GMT+8", "yyyy-MM-dd");
+         const blob = UrlFetchApp.fetch(imgUrl).getBlob().setName(`[${todayStr}] ${prompt}.png`);
+         const file = folder.createFile(blob);
+         file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+
+
+         ss.getSheetByName('資料').appendRow([ Utilities.getUuid(), 'file', 'AI繪圖', prompt, '', '檔案已存儲於雲端。', Utilities.formatDate(new Date(), "GMT+8", "yyyy-MM-dd"), Utilities.formatDate(new Date(), "GMT+8", "HH:mm"), file.getUrl(), '🎨', 'bg-pink-50 text-pink-700' ]);
+         // 註解以節省 LINE 額度
+         // replyToLine(replyToken, [{type: 'text', text: `圖片生成完畢並已備份：\n${file.getUrl()}`}], lineToken);
+         return safeResponse({status: "success"});
+       }
+
+
+       const extractedUrl = extractUrlFromText(text);
+       let finalPrompt = `使用者輸入訊息：${text}`;
+       let finalUrl = extractedUrl || '#';
+
+
+       if (extractedUrl) {
+          const pageContent = parseUrlContent(extractedUrl);
+          finalPrompt = `使用者分享了一個網址：${extractedUrl}\n\n此網頁的實際內容為：\n${pageContent}\n\n請根據以上網頁內容進行摘要與分類。如果內容顯示無法讀取或是社群登入頁面，請註明這是無法解析的受限連結。`;
+       }
+
+
+       const result = analyzeWithLLM(finalPrompt, settings, ss);
+       ss.getSheetByName('資料').appendRow([ Utilities.getUuid(), result.type, result.subcategory, result.title, '', result.content, result.eventDate || Utilities.formatDate(new Date(), "GMT+8", "yyyy-MM-dd"), result.eventTime || Utilities.formatDate(new Date(), "GMT+8", "HH:mm"), finalUrl, '📝', 'bg-gray-50 text-gray-700' ]);
+       // 註解以節省 LINE 額度
+       // replyToLine(replyToken, [{type: 'text', text: `紀錄完成：\n分類：${result.subcategory}\n標題：${result.title}`}], lineToken);
+
+
+     } else if (type === 'audio') {
+       handleLineAudio(ss, event.message, lineToken, settings);
+       // 註解以節省 LINE 額度
+       // replyToLine(replyToken, [{type: 'text', text: '語音訊息已轉譯並分析完畢。'}], lineToken);
+     } else if (['image', 'video', 'file'].includes(type)) {
+       handleLineFile(ss, event.message, lineToken, settings);
+       // 註解以節省 LINE 額度
+       // replyToLine(replyToken, [{type: 'text', text: '檔案已安全備份至雲端。'}], lineToken);
+     }
+     return safeResponse({status: "success"});
+   }
+
+
+   return safeResponse({status: "ignored"});
+ } catch (e) {
+   logSystem('ERROR', 'doPost 例外錯誤', e.toString());
+   return safeResponse({status: "error", message: e.toString()});
+ }
+}
+
+
+function replyToLine(replyToken, messages, token) {
+ try {
+   UrlFetchApp.fetch('https://api.line.me/v2/bot/message/reply', {
+     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+     method: 'post',
+     payload: JSON.stringify({ replyToken: replyToken, messages: messages })
+   });
+ } catch (e) { logSystem('ERROR', 'LINE 回覆失敗', e.toString()); }
+}
+
+
+function setupDailyTrigger() {
+ ScriptApp.getProjectTriggers().forEach(t => ScriptApp.deleteTrigger(t));
+ ScriptApp.newTrigger('sendMorningReport')
+   .timeBased()
+   .atHour(8)
+   .everyDays(1)
+   .create();
+ return "排程建立成功，每日上午 8 點觸發晨報。";
+}
+
+
+function sendMorningReport() {
+ const sheetId = PROPS.getProperty('SHEET_ID');
+ if (!sheetId) return;
+ const ss = SpreadsheetApp.openById(sheetId);
+ const settings = ss.getSheetByName('設定').getDataRange().getValues();
+ let lineToken = "", userId = "";
+ settings.forEach(row => {
+   if (row[0] === 'LINE_ACCESS_TOKEN') lineToken = row[1];
+   if (row[0] === 'LINE_USER_ID') userId = row[1];
+ });
+ if (!lineToken || !userId || userId === '自動擷取綁定') return;
+
+
+ const today = Utilities.formatDate(new Date(), "GMT+8", "yyyy-MM-dd");
+ const data = ss.getSheetByName('資料').getDataRange().getValues();
+ if (data.length < 2) return;
+
+
+ const headers = data[0];
+ let dateIdx = headers.indexOf('Date');
+ let timeIdx = headers.indexOf('Time');
+ let typeIdx = headers.indexOf('Type');
+ let titleIdx = headers.indexOf('Title');
+  if (dateIdx === -1) dateIdx = 6;
+ if (timeIdx === -1) timeIdx = 7;
+ if (typeIdx === -1) typeIdx = 1;
+ if (titleIdx === -1) titleIdx = 3;
+
+
+ let todayEvents = [];
+ data.forEach((row, idx) => {
+   if (idx === 0) return;
+  
+   let rowDate = row[dateIdx];
+   if (rowDate instanceof Date) {
+     rowDate = Utilities.formatDate(rowDate, "GMT+8", "yyyy-MM-dd");
+   } else if (rowDate) {
+     rowDate = String(rowDate).trim();
+   }
+
+
+   let rowTime = row[timeIdx];
+   if (rowTime instanceof Date) {
+     rowTime = Utilities.formatDate(rowTime, "GMT+8", "HH:mm");
+   } else if (rowTime) {
+     rowTime = String(rowTime).trim();
+   }
+
+
+   if (row[typeIdx] === 'event' && rowDate === today) {
+     todayEvents.push(`${rowTime || '全天'} ${row[titleIdx]}`);
+   }
+ });
+
+
+ const msg = todayEvents.length > 0
+   ? `早安！今日行程提醒：\n\n${todayEvents.join('\n')}`
+   : `早安！今日目前無排定行程。`;
+
+
+ try {
+   UrlFetchApp.fetch('https://api.line.me/v2/bot/message/push', {
+     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${lineToken}` },
+     method: 'post',
+     payload: JSON.stringify({ to: userId, messages: [{ type: 'text', text: msg }] })
+   });
+ } catch (e) { logSystem('ERROR', '晨報推播失敗', e.toString()); }
+}
+
+
+function chatWithLLM(prompt, settings) {
+ let engine = "Groq", groqKey = "", hfToken = "", geminiKey = "";
+ settings.forEach(row => {
+   if (row[0] === 'LLM_ENGINE') engine = row[1];
+   if (row[0] === 'GROQ_API_KEY') groqKey = row[1];
+   if (row[0] === 'HUGGINGFACE_TOKEN') hfToken = row[1];
+   if (row[0] === 'GEMINI_API_KEY') geminiKey = row[1];
+ });
+
+
+ if (engine === 'Groq' && groqKey) {
+   try {
+     const res = UrlFetchApp.fetch("https://api.groq.com/openai/v1/chat/completions", {
+       method: "post", headers: { "Authorization": `Bearer ${groqKey}`, "Content-Type": "application/json" },
+       muteHttpExceptions: true, payload: JSON.stringify({ model: "llama-3.3-70b-versatile", messages: [{role: "user", content: prompt}] })
+     });
+     const data = JSON.parse(res.getContentText());
+     if (data.choices) return data.choices[0].message.content.trim();
+   } catch (e) {}
+ }
+
+
+ if (hfToken) {
+   try {
+     const res = UrlFetchApp.fetch("https://api-inference.huggingface.co/models/meta-llama/Meta-Llama-3-8B-Instruct", {
+       method: "post", headers: { "Authorization": `Bearer ${hfToken}`, "Content-Type": "application/json" },
+       muteHttpExceptions: true, payload: JSON.stringify({ inputs: prompt, parameters: { return_full_text: false } })
+     });
+     const data = JSON.parse(res.getContentText());
+     const text = data[0]?.generated_text || data.generated_text;
+     if (text) return text.trim();
+   } catch (e) {}
+ }
+
+
+ if (geminiKey) {
+   try {
+     const res = UrlFetchApp.fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`, {
+       method: "post", headers: { "Content-Type": "application/json" },
+       muteHttpExceptions: true, payload: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+     });
+     const text = JSON.parse(res.getContentText()).candidates[0].content.parts[0].text;
+     return text.trim();
+   } catch (e) {}
+ }
+
+
+ return "抱歉，知識庫助理目前發生連線異常，請檢查金鑰設定。";
+}
+
+
+function analyzeWithLLM(prompt, settings, ss = null) {
+ let engine = "Groq", groqKey = "", hfToken = "", geminiKey = "", sysPrompt = "";
+ settings.forEach(row => {
+   if (row[0] === 'LLM_ENGINE') engine = row[1];
+   if (row[0] === 'GROQ_API_KEY') groqKey = row[1];
+   if (row[0] === 'HUGGINGFACE_TOKEN') hfToken = row[1];
+   if (row[0] === 'GEMINI_API_KEY') geminiKey = row[1];
+   if (row[0] === 'SYSTEM_PROMPT') sysPrompt = row[1];
+ });
+
+
+ const finalPrompt = prompt.includes(sysPrompt) ? prompt : `${sysPrompt}\n\n${prompt}`;
+  if (engine === 'Groq' && groqKey) {
+   try {
+     const res = UrlFetchApp.fetch("https://api.groq.com/openai/v1/chat/completions", {
+       method: "post", headers: { "Authorization": `Bearer ${groqKey}`, "Content-Type": "application/json" },
+       muteHttpExceptions: true, payload: JSON.stringify({ model: "llama-3.3-70b-versatile", messages: [{role: "user", content: finalPrompt}], response_format: {type: "json_object"} })
+     });
+     const data = JSON.parse(res.getContentText());
+     if (data.choices) return JSON.parse(data.choices[0].message.content.replace(/```json\n?|```/g, '').trim());
+   } catch (e) { logSystem('WARN', 'Groq 熔斷，切換備援', e.toString()); }
+ }
+
+
+ if (hfToken) {
+   try {
+     const res = UrlFetchApp.fetch("https://api-inference.huggingface.co/models/meta-llama/Meta-Llama-3-8B-Instruct", {
+       method: "post", headers: { "Authorization": `Bearer ${hfToken}`, "Content-Type": "application/json" },
+       muteHttpExceptions: true, payload: JSON.stringify({ inputs: finalPrompt, parameters: { return_full_text: false } })
+     });
+     const data = JSON.parse(res.getContentText());
+     const text = data[0]?.generated_text || data.generated_text;
+     if (text) return JSON.parse(text.substring(text.indexOf('{'), text.lastIndexOf('}') + 1));
+   } catch (e) { logSystem('WARN', 'HF 備援失敗', e.toString()); }
+ }
+
+
+ if (geminiKey) {
+   try {
+     const res = UrlFetchApp.fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`, {
+       method: "post", headers: { "Content-Type": "application/json" },
+       muteHttpExceptions: true, payload: JSON.stringify({ contents: [{ parts: [{ text: finalPrompt }] }], generationConfig: { responseMimeType: "application/json" } })
+     });
+     return JSON.parse(JSON.parse(res.getContentText()).candidates[0].content.parts[0].text.replace(/```json\n?|```/g, '').trim());
+   } catch (e) {}
+ }
+
+
+ return { type: "article", subcategory: "系統降級", title: "解析失敗紀錄", content: prompt };
+}
+
+
+function handleLineAudio(ss, msg, token, settings) {
+ try {
+   const blob = UrlFetchApp.fetch(`https://api-data.line.me/v2/bot/message/${msg.id}/content`, { headers: { 'Authorization': `Bearer ${token}` } }).getBlob();
+   let groqKey = "", hfToken = "";
+   settings.forEach(row => {
+     if (row[0] === 'GROQ_API_KEY') groqKey = row[1];
+     if (row[0] === 'HUGGINGFACE_TOKEN') hfToken = row[1];
+   });
+
+
+   let text = "";
+   if (groqKey) {
+     const res = UrlFetchApp.fetch("https://api-groq.com/openai/v1/audio/transcriptions", {
+       method: "post", headers: { "Authorization": `Bearer ${groqKey}` },
+       payload: { file: blob.setName('audio.m4a'), model: 'whisper-large-v3' }, muteHttpExceptions: true
+     });
+     text = JSON.parse(res.getContentText()).text;
+   } else if (hfToken) {
+      const res = UrlFetchApp.fetch("https://api-inference.huggingface.co/models/openai/whisper-large-v3", {
+        method: "post", headers: { "Authorization": `Bearer ${hfToken}` }, payload: blob.getBytes(), muteHttpExceptions: true
+      });
+      text = JSON.parse(res.getContentText()).text;
+   }
+  
+   if (text) {
+     const llmResult = analyzeWithLLM(`語音轉譯內容：${text}`, settings, ss);
+     ss.getSheetByName('資料').appendRow([ Utilities.getUuid(), llmResult.type, llmResult.subcategory, llmResult.title, '語音轉譯', llmResult.content, Utilities.formatDate(new Date(), "GMT+8", "yyyy-MM-dd"), Utilities.formatDate(new Date(), "GMT+8", "HH:mm"), '#', '🎤', 'bg-purple-50 text-purple-700' ]);
+   }
+ } catch (e) { logSystem('ERROR', '語音轉譯失敗', e.toString()); }
+}
+
+
+function handleLineFile(ss, msg, token, settings) {
+ try {
+   const blob = UrlFetchApp.fetch(`https://api-data.line.me/v2/bot/message/${msg.id}/content`, { headers: { 'Authorization': `Bearer ${token}` } }).getBlob();
+   let folderId = "";
+   settings.forEach(row => { if (row[0] === 'DRIVE_FOLDER_ID') folderId = row[1]; });
+   const folder = folderId ? DriveApp.getFolderById(folderId) : DriveApp.getRootFolder();
+  
+   const todayStr = Utilities.formatDate(new Date(), "GMT+8", "yyyy-MM-dd");
+   const originalName = msg.fileName || blob.getName() || '未命名檔案';
+   blob.setName(`[${todayStr}] ${originalName}`);
+  
+   const file = folder.createFile(blob);
+   file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+
+
+   const llmResult = analyzeWithLLM(`檔案名稱：${originalName}，請根據檔名分類。`, settings, ss);
+   ss.getSheetByName('資料').appendRow([ Utilities.getUuid(), 'file', llmResult.subcategory, llmResult.title, '文件備份', '檔案已安全存儲於雲端。', Utilities.formatDate(new Date(), "GMT+8", "yyyy-MM-dd"), Utilities.formatDate(new Date(), "GMT+8", "HH:mm"), file.getUrl(), '📁', 'bg-emerald-50 text-emerald-700' ]);
+ } catch (e) { logSystem('ERROR', '文件處理失敗', e.toString()); }
+}
+
